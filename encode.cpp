@@ -1,11 +1,11 @@
-﻿#include "csv.h"
+﻿#include <math.h>
+#include <cstdlib>
+#include <fstream>
+#include "csv.h"
 #include "fit_date_time.hpp"
 #include "fit_encode.hpp"
 #include "fit_file_id_mesg.hpp"
 #include "fit_mesg_broadcaster.hpp"
-#include <cstdlib>
-#include <fstream>
-#include <math.h>
 
 FIT_SINT32 DegreesToSemicircle(double degree) {
   return static_cast<FIT_SINT32>((degree * pow(2, 31)) / 180);
@@ -118,14 +118,15 @@ int ConvertCSVToFIT(std::string csv_file) {
     rpm_msg.SetRawData(1, static_cast<FIT_BYTE>(rpm) % 256);
 
     throttle_msg.SetPid(0x11);
-    throttle_msg.SetRawData(0, static_cast<FIT_BYTE>(throttle_position));
+    throttle_msg.SetRawData(
+        0, static_cast<FIT_BYTE>(throttle_position * (255 / 100.0)));
 
     engine_coolant_msg.SetPid(0x05);
-    engine_coolant_msg.SetRawData(0,
-                                  static_cast<FIT_BYTE>(engine_coolant_temp));
+    engine_coolant_msg.SetRawData(
+        0, static_cast<FIT_BYTE>(engine_coolant_temp + 40));
 
     intake_air_msg.SetPid(0x0F);
-    intake_air_msg.SetRawData(0, static_cast<FIT_BYTE>(intake_air_temp));
+    intake_air_msg.SetRawData(0, static_cast<FIT_BYTE>(intake_air_temp + 40));
 
     intake_manifold_msg.SetPid(0x0B);
     intake_manifold_msg.SetRawData(
@@ -136,19 +137,18 @@ int ConvertCSVToFIT(std::string csv_file) {
       encode.Write(*msg);
     }
 
-    /* Add general record data, such as longitude and latitude. */
-    fit::RecordMesg record;
-    /* Normal records are #2. */
-    record.SetLocalNum(2);
-    record.SetTimestamp(static_cast<long>(time));
-    record.SetPositionLat(DegreesToSemicircle(lat));
-    record.SetPositionLong(DegreesToSemicircle(lon));
+    fit::GpsMetadataMesg gps_msg;
+    gps_msg.SetLocalNum(6);
+    gps_msg.SetEnhancedSpeed(static_cast<FIT_FLOAT32>(speed / 3.6));
+    gps_msg.SetTimestamp(static_cast<unsigned int>(time));
+    gps_msg.SetTimestampMs(
+        static_cast<FIT_UINT16>((time - static_cast<int>(time)) * 1000.0));
+    gps_msg.SetPositionLat(DegreesToSemicircle(lat));
+    gps_msg.SetPositionLong(DegreesToSemicircle(lon));
     /* Altitude in meters. */
-    record.SetAltitude(static_cast<FIT_FLOAT32>(alt));
-    /* This is needed due to OBDII being locked at 255 (single byte). */
-    record.SetEnhancedSpeed(static_cast<FIT_FLOAT32>(speed / 3.6));
+    gps_msg.SetEnhancedAltitude(static_cast<FIT_FLOAT32>(alt));
 
-    encode.Write(record);
+    encode.Write(gps_msg);
   }
 
   if (!encode.Close()) {
